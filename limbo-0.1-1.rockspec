@@ -14,7 +14,9 @@ description = {
     license = "MIT"
 }
 dependencies = {
-    "lua >= 5.1"
+    "lua >= 5.1",
+    "sha2 >= 0.2",
+    "cjson >= 2.0"
 }
 build = {
     type = "builtin",

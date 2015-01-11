@@ -1,4 +1,14 @@
 local http = require "socket.http"
+local ltn12 = require "ltn12"
+local json = require "cjson"
+require "hmac.sha2"
+
+local function bintohex(s)
+    return (s:gsub('(.)', function(c)
+        return string.format('%02x', string.byte(c))
+    end))
+end 
+
 if not http then
     print "Requires socket.http"
 end
@@ -20,14 +30,39 @@ function limbo:new(o)
         print "Missing privkey"
         return nil
     end
+
     return o
 end
 
-function limbo:request(url)
-    local r, c, h, s = http.request{
-        url = self.servers[0] .. url
+function limbo:request(url, params, method)
+    local resp = {}
+    if (not method) then
+        method = 'GET'
+    end
+
+    url = self.servers[0] .. url
+
+    local timestamp = os.date("%Y-%m-%dT%H:%M:%SZ")
+    local sigdata = method .. "|" .. url .. "|" .. self.pubKey .. "|" .. timestamp
+    local signature = bintohex(hmac.sha256(sigdata, self.privKey))
+    local accessToken = bintohex(hmac.sha256(url, self.privKey))
+    url = url .. "?accessToken=" .. accessToken
+
+    local r, code, headers = http.request{
+        url = url,
+        sink = ltn12.sink.table(resp),
+        headers = {
+            ['accept'] = 'application/json',
+            ['x-imbo-authenticate-signature'] = signature,
+            ['x-imbo-authenticate-timestamp'] = timestamp
+        }
     }
-    return r
+
+    if (code ~= 200 or headers['x-imbo-error-message']) then
+        return { error = { code = code, message = headers['x-imbo-error-message'] } }
+    end
+
+    return json.decode(resp[1])
 end
 
 function limbo:metadataUrl(identifier)
@@ -43,7 +78,7 @@ function limbo:userUrl()
 end
 
 function limbo:imagesUrl()
-    return "NOT IMPLEMENTED"
+    return self:request("/users/" .. self.pubKey .. "/images.json")
 end
 
 function limbo:imageUrl()

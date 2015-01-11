@@ -1,9 +1,26 @@
 package.path = "../src/?.lua;" .. package.path
+require "io"
+
+function dump(tbl, indent) 
+    if (not indent) then
+        indent = 0
+    end
+    for k, v in pairs(tbl) do
+        io.write(string.rep("  ", indent) .. k .. ": ")
+        if (type(v) == 'table') then
+            io.write("\n")
+            indent = indent + 1
+            dump(v, indent)
+        else
+            io.write(tostring(v) .. "\n")
+        end
+    end
+end
 
 local limbo = require 'limbo'
 
-local client = limbo:new { servers = {[0] = "http://localhost"}, privKey = "private", pubKey = "public"}
+local client = limbo:new { servers = {[0] = "http://localhost"}, privKey = "privkey", pubKey = "testuser"}
 
-client:request("/test")
-
+dump(client:request("/status"))
+dump(client:imagesUrl())
 print(client:statusUrl())
