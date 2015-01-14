@@ -42,24 +42,42 @@ function limbo:request(url, params, method)
 
     url = self.servers[0] .. url
 
-    local timestamp = os.date("%Y-%m-%dT%H:%M:%SZ")
+    local source = nil
+    local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+    local headers = {}
+
+    local accessToken = bintohex(hmac.sha256(url, self.privKey))
+
+    -- GET requests need access token
+    if (method == 'GET') then
+        url = url .. "?accessToken=" .. accessToken
+    elseif (method == 'FILE') then
+        method = 'POST'
+        local file = io.open(params, "r")
+        local size = file:seek('end')
+        file:seek('set')
+        source = ltn12.source.file(file)
+        headers['content-type'] = 'multipart/form-data'
+        headers['content-length'] = size
+    end
+
     local sigdata = method .. "|" .. url .. "|" .. self.pubKey .. "|" .. timestamp
     local signature = bintohex(hmac.sha256(sigdata, self.privKey))
-    local accessToken = bintohex(hmac.sha256(url, self.privKey))
-    url = url .. "?accessToken=" .. accessToken
+
+    headers['accept'] = 'application/json'
+    headers['x-imbo-authenticate-signature'] = signature
+    headers['x-imbo-authenticate-timestamp'] = timestamp
 
     local r, code, headers = http.request{
         url = url,
+        method = method,
+        source = source,
         sink = ltn12.sink.table(resp),
-        headers = {
-            ['accept'] = 'application/json',
-            ['x-imbo-authenticate-signature'] = signature,
-            ['x-imbo-authenticate-timestamp'] = timestamp
-        }
+        headers = headers
     }
 
-    if (code ~= 200 or headers['x-imbo-error-message']) then
-        return { error = { code = code, message = headers['x-imbo-error-message'] } }
+    if (code < 200 or code >= 300 or headers['x-imbo-error-message']) then
+        return { request = { url = url, method = method }, error = { code = code, message = headers['x-imbo-error-message'] } }
     end
 
     return json.decode(resp[1])
@@ -69,15 +87,19 @@ function limbo:metadataUrl(identifier)
     return "NOT IMPLEMENTED"
 end
 
-function limbo:statusUrl()
-    return "NOT IMPLEMENTED"
+function limbo:stats()
+    return self:request("/stats")
 end
 
-function limbo:userUrl()
-    return "NOT IMPLEMENTED"
+function limbo:status()
+    return self:request("/status")
 end
 
-function limbo:imagesUrl()
+function limbo:user()
+    return self:request("/users/" .. self.pubKey .. ".json")
+end
+
+function limbo:images()
     return self:request("/users/" .. self.pubKey .. "/images.json")
 end
 
@@ -85,8 +107,8 @@ function limbo:imageUrl()
     return "NOT IMPLEMENTED"
 end
 
-function limbo:addImage()
-    return "NOT IMPLEMENTED"
+function limbo:addImage(file)
+    return self:request("/users/" .. self.pubKey .. "/images", file, "FILE")
 end
 
 function limbo:addImageFromString()
@@ -109,8 +131,8 @@ function limbo:headImage()
     return "NOT IMPLEMENTED"
 end
 
-function limbo:deleteImage()
-    return "NOT IMPLEMENTED"
+function limbo:deleteImage(image)
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image, {}, "DELETE")
 end
 
 function limbo:editMetadata()
@@ -126,10 +148,6 @@ function limbo:deleteMetadata()
 end
 
 function limbo:numImages()
-    return "NOT IMPLEMENTED"
-end
-
-function limbo:images()
     return "NOT IMPLEMENTED"
 end
 
