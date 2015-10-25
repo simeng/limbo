@@ -9,8 +9,7 @@ function dump(tbl, indent)
         io.write(string.rep("  ", indent) .. k .. ": ")
         if (type(v) == 'table') then
             io.write("\n")
-            indent = indent + 1
-            dump(v, indent)
+            dump(v, indent + 1)
         else
             io.write(tostring(v) .. "\n")
         end

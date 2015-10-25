@@ -49,9 +49,15 @@ function limbo:request(url, params, method)
     local accessToken = bintohex(hmac.sha256(url, self.privKey))
 
     -- GET requests need access token
-    if (method == 'GET') then
+    if method == 'GET' then
         url = url .. "?accessToken=" .. accessToken
-    elseif (method == 'FILE') then
+    elseif method == 'PUT' or method == 'POST' then
+        url = url .. "?accessToken=" .. accessToken
+        local body = json.encode(params)
+        source = ltn12.source.string(body)
+        headers['content-type'] = 'application/json'
+        headers['content-length'] = #body
+    elseif method == 'FILE' then
         method = 'POST'
         local file = io.open(params, "r")
         local size = file:seek('end')
@@ -135,16 +141,20 @@ function limbo:deleteImage(image)
     return self:request("/users/" .. self.pubKey .. "/images/" .. image, {}, "DELETE")
 end
 
-function limbo:editMetadata()
-    return "NOT IMPLEMENTED"
+function limbo:editMetadata(image, metadata)
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", metadata, "POST")
 end
 
-function limbo:replaceMetadata()
-    return "NOT IMPLEMENTED"
+function limbo:replaceMetadata(image, metadata)
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", metadata, "PUT")
 end
 
-function limbo:deleteMetadata()
-    return "NOT IMPLEMENTED"
+function limbo:deleteMetadata(image)
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", {}, "DELETE")
+end
+
+function limbo:fetchMetadata(image)
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", {}, "GET")
 end
 
 function limbo:numImages()
