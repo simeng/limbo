@@ -1,3 +1,4 @@
+local urllib = require "socket.url"
 local http = require "socket.http"
 local ltn12 = require "ltn12"
 local json = require "cjson"
@@ -36,23 +37,43 @@ end
 
 function limbo:request(url, params, method)
     local resp = {}
-    if (not method) then
+    if not method then
         method = 'GET'
+    end
+    if not params then
+        params = {}
     end
 
     url = self.servers[0] .. url
+
+    local parsed_url = urllib.parse(url)
 
     local source = nil
     local timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     local headers = {}
 
-    local accessToken = bintohex(hmac.sha256(url, self.privKey))
 
     -- GET requests need access token
     if method == 'GET' then
-        url = url .. "?accessToken=" .. accessToken
+        for k, v in pairs(params) do
+            if parsed_url['query'] then
+                parsed_url['query'] = parsed_url['query'] .. "&"
+            else
+                parsed_url['query'] = ""
+            end
+            parsed_url['query'] = parsed_url['query'] .. urllib.escape(k) .. "=" .. urllib.escape(v)
+        end
+
+        url = urllib.build(parsed_url)
+        local accessToken = bintohex(hmac.sha256(url, self.privKey))
+        if parsed_url['query'] then
+            parsed_url['query'] = parsed_url['query'] .. "&"
+        else
+            parsed_url['query'] = ""
+        end
+        parsed_url['query'] = parsed_url['query'] .. "accessToken=" .. accessToken
+        url = urllib.build(parsed_url)
     elseif method == 'PUT' or method == 'POST' then
-        url = url .. "?accessToken=" .. accessToken
         local body = json.encode(params)
         source = ltn12.source.string(body)
         headers['content-type'] = 'application/json'
@@ -67,12 +88,14 @@ function limbo:request(url, params, method)
         headers['content-length'] = size
     end
 
-    local sigdata = method .. "|" .. url .. "|" .. self.pubKey .. "|" .. timestamp
-    local signature = bintohex(hmac.sha256(sigdata, self.privKey))
+    if not method == 'GET' then
+        local sigdata = method .. "|" .. url .. "|" .. self.pubKey .. "|" .. timestamp
+        local signature = bintohex(hmac.sha256(sigdata, self.privKey))
 
-    headers['accept'] = 'application/json'
-    headers['x-imbo-authenticate-signature'] = signature
-    headers['x-imbo-authenticate-timestamp'] = timestamp
+        headers['accept'] = 'application/json'
+        headers['x-imbo-authenticate-signature'] = signature
+        headers['x-imbo-authenticate-timestamp'] = timestamp
+    end
 
     local r, code, headers = http.request{
         url = url,
@@ -105,8 +128,9 @@ function limbo:user()
     return self:request("/users/" .. self.pubKey .. ".json")
 end
 
-function limbo:images()
-    return self:request("/users/" .. self.pubKey .. "/images.json")
+function limbo:images(params)
+    
+    return self:request("/users/" .. self.pubKey .. "/images.json", params)
 end
 
 function limbo:imageUrl()
@@ -154,7 +178,7 @@ function limbo:deleteMetadata(image)
 end
 
 function limbo:fetchMetadata(image)
-    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", {}, "GET")
+    return self:request("/users/" .. self.pubKey .. "/images/" .. image .. "/metadata.json", {})
 end
 
 function limbo:numImages()
